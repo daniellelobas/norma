@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { LoteEstoque, MovimentacaoEstoque } from '../types/estoque'
 
 type Cliente = {
   id: number
@@ -43,11 +44,9 @@ type VendaSalva = {
 function lerLista<T>(chave: string): T[] {
   try {
     const dados = localStorage.getItem(chave)
-
     if (!dados) return []
 
     const resultado: unknown = JSON.parse(dados)
-
     return Array.isArray(resultado) ? (resultado as T[]) : []
   } catch {
     return []
@@ -72,7 +71,9 @@ function Vendas() {
 
   const [clienteId, setClienteId] = useState('')
   const [buscaProduto, setBuscaProduto] = useState('')
-  const [quantidade, setQuantidade] = useState('1')
+  const [quantidadesProdutos, setQuantidadesProdutos] = useState<
+    Record<number, string>
+  >({})
   const [itens, setItens] = useState<ItemVenda[]>([])
   const [formaPagamento, setFormaPagamento] =
     useState<FormaPagamento>('Pix')
@@ -90,9 +91,10 @@ function Vendas() {
     )
   })
 
-  const subtotal = itens.reduce((total, item) => {
-    return total + item.precoUnitario * item.quantidade
-  }, 0)
+  const subtotal = itens.reduce(
+    (total, item) => total + item.precoUnitario * item.quantidade,
+    0,
+  )
 
   function mostrarMensagem(texto: string, temErro = false) {
     setMensagem(texto)
@@ -102,6 +104,13 @@ function Vendas() {
   function atualizarDados() {
     setClientes(lerLista<Cliente>('norma-clientes'))
     setProdutos(lerLista<Produto>('norma-produtos'))
+  }
+
+  function alterarQuantidadeProduto(produtoId: number, valor: string) {
+    setQuantidadesProdutos((quantidadesAtuais) => ({
+      ...quantidadesAtuais,
+      [produtoId]: valor,
+    }))
   }
 
   function adicionarProduto(produto: Produto) {
@@ -119,7 +128,9 @@ function Vendas() {
       return
     }
 
-    const quantidadeEscolhida = Number(quantidade)
+    const quantidadeEscolhida = Number(
+      quantidadesProdutos[produto.id] ?? '1',
+    )
 
     if (
       !Number.isSafeInteger(quantidadeEscolhida) ||
@@ -134,7 +145,10 @@ function Vendas() {
 
     const estoqueDisponivel = Number(produtoAtual.quantidade)
 
-    if (!Number.isSafeInteger(estoqueDisponivel) || estoqueDisponivel < 0) {
+    if (
+      !Number.isSafeInteger(estoqueDisponivel) ||
+      estoqueDisponivel < 0
+    ) {
       atualizarDados()
       mostrarMensagem(
         'A quantidade de estoque deste produto está inválida. Confira o cadastro.',
@@ -161,10 +175,7 @@ function Vendas() {
       )
 
       mostrarMensagem(
-        `Não foi possível adicionar o produto "${produtoAtual.nome}". ` +
-          `Você solicitou ${quantidadeEscolhida} unidade(s), mas ` +
-          `há somente ${quantidadeRestante} unidade(s) disponível(is) ` +
-          `para adicionar à venda.`,
+        `Não foi possível adicionar "${produtoAtual.nome}". Há somente ${quantidadeRestante} unidade(s) disponível(is) para adicionar.`,
         true,
       )
       return
@@ -186,7 +197,9 @@ function Vendas() {
 
       if (jaExiste) {
         return itensAtuais.map((item) =>
-          Number(item.produtoId) === Number(produtoAtual.id) ? novoItem : item,
+          Number(item.produtoId) === Number(produtoAtual.id)
+            ? novoItem
+            : item,
         )
       }
 
@@ -194,14 +207,22 @@ function Vendas() {
     })
 
     setProdutos(produtosAtuais)
-    setBuscaProduto('')
-    setQuantidade('1')
-    mostrarMensagem('Produto adicionado à venda.')
+
+    setQuantidadesProdutos((quantidadesAtuais) => ({
+      ...quantidadesAtuais,
+      [produto.id]: '1',
+    }))
+
+    mostrarMensagem(
+      `${quantidadeEscolhida} unidade(s) de "${produtoAtual.nome}" adicionada(s) à venda.`,
+    )
   }
 
   function removerProduto(produtoId: number) {
     setItens((itensAtuais) =>
-      itensAtuais.filter((item) => Number(item.produtoId) !== Number(produtoId)),
+      itensAtuais.filter(
+        (item) => Number(item.produtoId) !== Number(produtoId),
+      ),
     )
 
     mostrarMensagem('Produto removido da venda.')
@@ -210,7 +231,7 @@ function Vendas() {
   function limparVenda() {
     setClienteId('')
     setBuscaProduto('')
-    setQuantidade('1')
+    setQuantidadesProdutos({})
     setItens([])
     setFormaPagamento('Pix')
     setDataVencimento('')
@@ -226,10 +247,7 @@ function Vendas() {
     }
 
     if (itens.length === 0) {
-      mostrarMensagem(
-        'Adicione pelo menos um produto à venda.',
-        true,
-      )
+      mostrarMensagem('Adicione pelo menos um produto à venda.', true)
       return
     }
 
@@ -242,10 +260,7 @@ function Vendas() {
     ].join('-')
 
     if (formaPagamento === 'Fiado' && !dataVencimento) {
-      mostrarMensagem(
-        'Informe a data de vencimento do fiado.',
-        true,
-      )
+      mostrarMensagem('Informe a data de vencimento do fiado.', true)
       return
     }
 
@@ -263,6 +278,9 @@ function Vendas() {
     const clientesAtuais = lerLista<Cliente>('norma-clientes')
     const produtosAtuais = lerLista<Produto>('norma-produtos')
     const vendasAtuais = lerLista<VendaSalva>('norma-vendas')
+    const lotesAtuais = lerLista<LoteEstoque>('norma-lotes')
+    const movimentacoesAtuais =
+      lerLista<MovimentacaoEstoque>('norma-movimentacoes')
 
     const clienteSelecionado = clientesAtuais.find(
       (cliente) => String(cliente.id) === clienteId,
@@ -277,6 +295,7 @@ function Vendas() {
       return
     }
 
+    // Confere novamente o estoque antes de finalizar.
     for (const item of itens) {
       const produtoAtual = produtosAtuais.find(
         (produto) => Number(produto.id) === Number(item.produtoId),
@@ -300,23 +319,125 @@ function Vendas() {
         item.quantidade > estoqueDisponivel
       ) {
         atualizarDados()
-
         mostrarMensagem(
-          `VENDA BLOQUEADA! O produto "${produtoAtual.nome}" ` +
-            `tem apenas ${Math.max(0, estoqueDisponivel || 0)} ` +
-            `unidade(s) em estoque, mas a venda solicita ` +
-            `${item.quantidade}. Nenhuma alteração foi feita.`,
+          `VENDA BLOQUEADA! "${produtoAtual.nome}" possui ${Math.max(
+            0,
+            estoqueDisponivel || 0,
+          )} unidade(s), mas a venda solicita ${item.quantidade}. Nenhuma alteração foi feita.`,
           true,
         )
         return
       }
     }
 
-    const total = itens.reduce((soma, item) => {
-      return soma + item.precoUnitario * item.quantidade
-    }, 0)
+    // Prepara as quantidades dos lotes sem salvar nada ainda.
+    const lotesAtualizados = lotesAtuais.map((lote) => ({ ...lote }))
+    const novasMovimentacoes: MovimentacaoEstoque[] = []
 
-    // Atualiza o estoque de TODOS os produtos vendidos simultaneamente
+    for (const item of itens) {
+      const produtoAtual = produtosAtuais.find(
+        (produto) => Number(produto.id) === Number(item.produtoId),
+      )
+
+      if (!produtoAtual) {
+        mostrarMensagem(`Produto "${item.nome}" não encontrado.`, true)
+        return
+      }
+
+      const lotesDoProduto = lotesAtualizados
+        .filter(
+          (lote) =>
+            Number(lote.produtoId) === Number(item.produtoId) &&
+            Number(lote.quantidadeDisponivel) > 0,
+        )
+        .sort((a, b) => {
+          if (!a.validade && !b.validade) return 0
+          if (!a.validade) return 1
+          if (!b.validade) return -1
+
+          return a.validade.localeCompare(b.validade)
+        })
+
+      const totalDisponivelNosLotesAntes = lotesDoProduto.reduce(
+        (total, lote) =>
+          total + Math.max(0, Number(lote.quantidadeDisponivel) || 0),
+        0,
+      )
+
+      const estoqueTotal = Number(produtoAtual.quantidade)
+
+      const estoqueSemLoteAntes = Math.max(
+        0,
+        estoqueTotal - totalDisponivelNosLotesAntes,
+      )
+
+      let quantidadeRestante = item.quantidade
+
+      // Dá baixa primeiro nos lotes que vencem mais cedo.
+      for (const lote of lotesDoProduto) {
+        if (quantidadeRestante <= 0) break
+
+        const disponivel = Math.max(
+          0,
+          Number(lote.quantidadeDisponivel) || 0,
+        )
+
+        const quantidadeBaixada = Math.min(
+          disponivel,
+          quantidadeRestante,
+        )
+
+        if (quantidadeBaixada > 0) {
+          lote.quantidadeDisponivel = disponivel - quantidadeBaixada
+          quantidadeRestante -= quantidadeBaixada
+
+          novasMovimentacoes.push({
+            id: Date.now() + novasMovimentacoes.length + 1,
+            tipo: 'Saída',
+            produtoId: item.produtoId,
+            produtoNome: item.nome,
+            quantidade: quantidadeBaixada,
+            loteId: lote.id,
+            lote: lote.lote || 'Não informado',
+            data: new Date().toISOString(),
+            origemId: Date.now(),
+            origem: 'Venda',
+            pessoaNome: clienteSelecionado.nome,
+          })
+        }
+      }
+
+      // O restante pode sair do estoque antigo, sem lote vinculado.
+      if (quantidadeRestante > estoqueSemLoteAntes) {
+        mostrarMensagem(
+          `Não foi possível distribuir a baixa dos lotes de "${item.nome}". Confira o estoque antes de tentar novamente.`,
+          true,
+        )
+        return
+      }
+
+      if (quantidadeRestante > 0) {
+        novasMovimentacoes.push({
+          id: Date.now() + novasMovimentacoes.length + 1,
+          tipo: 'Saída',
+          produtoId: item.produtoId,
+          produtoNome: item.nome,
+          quantidade: quantidadeRestante,
+          loteId: null,
+          lote: 'Estoque antigo (sem lote)',
+          data: new Date().toISOString(),
+          origemId: Date.now(),
+          origem: 'Venda',
+          pessoaNome: clienteSelecionado.nome,
+        })
+      }
+    }
+
+    const total = itens.reduce(
+      (soma, item) => soma + item.precoUnitario * item.quantidade,
+      0,
+    )
+
     const produtosAtualizados = produtosAtuais.map((produto) => {
       const itemVendido = itens.find(
         (item) => Number(item.produtoId) === Number(produto.id),
@@ -324,11 +445,10 @@ function Vendas() {
 
       if (!itemVendido) return produto
 
-      const novoEstoque = Number(produto.quantidade) - Number(itemVendido.quantidade)
-
       return {
         ...produto,
-        quantidade: Math.max(0, novoEstoque),
+        quantidade:
+          Number(produto.quantidade) - Number(itemVendido.quantidade),
       }
     })
 
@@ -346,8 +466,19 @@ function Vendas() {
         formaPagamento === 'Fiado' ? dataVencimento : null,
     }
 
+    // Usa o mesmo ID da venda como origem das movimentações.
+    const movimentacoesDaVenda = novasMovimentacoes.map((movimentacao) => ({
+      ...movimentacao,
+      origemId: novaVenda.id,
+      data: novaVenda.data,
+    }))
+
     const produtosAnteriores = localStorage.getItem('norma-produtos')
     const vendasAnteriores = localStorage.getItem('norma-vendas')
+    const lotesAnteriores = localStorage.getItem('norma-lotes')
+    const movimentacoesAnteriores = localStorage.getItem(
+      'norma-movimentacoes',
+    )
 
     try {
       localStorage.setItem(
@@ -359,7 +490,21 @@ function Vendas() {
         'norma-vendas',
         JSON.stringify([...vendasAtuais, novaVenda]),
       )
+
+      localStorage.setItem(
+        'norma-lotes',
+        JSON.stringify(lotesAtualizados),
+      )
+
+      localStorage.setItem(
+        'norma-movimentacoes',
+        JSON.stringify([
+          ...movimentacoesAtuais,
+          ...movimentacoesDaVenda,
+        ]),
+      )
     } catch {
+      // Tenta restaurar os dados anteriores caso alguma gravação falhe.
       try {
         if (produtosAnteriores === null) {
           localStorage.removeItem('norma-produtos')
@@ -372,8 +517,23 @@ function Vendas() {
         } else {
           localStorage.setItem('norma-vendas', vendasAnteriores)
         }
+
+        if (lotesAnteriores === null) {
+          localStorage.removeItem('norma-lotes')
+        } else {
+          localStorage.setItem('norma-lotes', lotesAnteriores)
+        }
+
+        if (movimentacoesAnteriores === null) {
+          localStorage.removeItem('norma-movimentacoes')
+        } else {
+          localStorage.setItem(
+            'norma-movimentacoes',
+            movimentacoesAnteriores,
+          )
+        }
       } catch {
-        // Armazenamento indisponível
+        // O armazenamento pode estar indisponível.
       }
 
       atualizarDados()
@@ -399,7 +559,7 @@ function Vendas() {
 
     setClienteId('')
     setBuscaProduto('')
-    setQuantidade('1')
+    setQuantidadesProdutos({})
     setItens([])
     setFormaPagamento('Pix')
     setDataVencimento('')
@@ -454,17 +614,6 @@ function Vendas() {
           onChange={(evento) => setBuscaProduto(evento.target.value)}
         />
 
-        <label htmlFor="quantidade-venda">Quantidade</label>
-
-        <input
-          id="quantidade-venda"
-          type="number"
-          min="1"
-          step="1"
-          value={quantidade}
-          onChange={(evento) => setQuantidade(evento.target.value)}
-        />
-
         {buscaProduto.trim() !== '' && (
           <div className="vendas-resultados">
             {produtosFiltrados.length === 0 ? (
@@ -478,20 +627,41 @@ function Vendas() {
                       {produto.marca} · Código: {produto.codigo}
                     </span>
                     <span>
-                      Preço: {formatarMoeda(Number(produto.precoVenda) || 0)}
+                      Preço:{' '}
+                      {formatarMoeda(Number(produto.precoVenda) || 0)}
                     </span>
                     <span>
                       Estoque: {Number(produto.quantidade) || 0} unidade(s)
                     </span>
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={Number(produto.quantidade) <= 0}
-                    onClick={() => adicionarProduto(produto)}
-                  >
-                    Adicionar
-                  </button>
+                  <div className="vendas-produto-acoes">
+                    <label htmlFor={`quantidade-produto-${produto.id}`}>
+                      Qtd.
+                    </label>
+
+                    <input
+                      id={`quantidade-produto-${produto.id}`}
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={quantidadesProdutos[produto.id] ?? '1'}
+                      onChange={(evento) =>
+                        alterarQuantidadeProduto(
+                          produto.id,
+                          evento.target.value,
+                        )
+                      }
+                    />
+
+                    <button
+                      type="button"
+                      disabled={Number(produto.quantidade) <= 0}
+                      onClick={() => adicionarProduto(produto)}
+                    >
+                      Adicionar
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -510,9 +680,7 @@ function Vendas() {
         <h3>3. Resumo da venda</h3>
 
         {itens.length === 0 ? (
-          <p className="vendas-vazio">
-            Nenhum produto adicionado ainda.
-          </p>
+          <p className="vendas-vazio">Nenhum produto adicionado ainda.</p>
         ) : (
           <div className="vendas-tabela-container">
             <table className="vendas-tabela">

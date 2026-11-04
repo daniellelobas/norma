@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from 'react'
+import type { LoteEstoque } from '../types/estoque'
 
 type Produto = {
   id: number
@@ -19,14 +20,18 @@ type Produto = {
 type FiltroEstoque = 'todos' | 'baixo' | 'zerado' | 'validade' | 'normal'
 
 function lerProdutosSalvos(): Produto[] {
-  const dados = localStorage.getItem('norma-produtos')
-
-  if (!dados) {
+  try {
+    const dados = localStorage.getItem('norma-produtos')
+    return dados ? (JSON.parse(dados) as Produto[]) : []
+  } catch {
     return []
   }
+}
 
+function lerLotesSalvos(): LoteEstoque[] {
   try {
-    return JSON.parse(dados) as Produto[]
+    const dados = localStorage.getItem('norma-lotes')
+    return dados ? (JSON.parse(dados) as LoteEstoque[]) : []
   } catch {
     return []
   }
@@ -34,25 +39,32 @@ function lerProdutosSalvos(): Produto[] {
 
 function Estoque() {
   const [produtos, setProdutos] = useState<Produto[]>(lerProdutosSalvos)
+  const [lotes, setLotes] = useState<LoteEstoque[]>(lerLotesSalvos)
   const [busca, setBusca] = useState('')
   const [filtro, setFiltro] = useState<FiltroEstoque>('todos')
+  const [produtoExpandido, setProdutoExpandido] = useState<number | null>(null)
 
   useEffect(() => {
-    function atualizarProdutos() {
+    function atualizarDados() {
       setProdutos(lerProdutosSalvos())
+      setLotes(lerLotesSalvos())
     }
 
-    window.addEventListener('storage', atualizarProdutos)
+    window.addEventListener('storage', atualizarDados)
+    window.addEventListener('norma-dados-atualizados', atualizarDados)
 
     return () => {
-      window.removeEventListener('storage', atualizarProdutos)
+      window.removeEventListener('storage', atualizarDados)
+      window.removeEventListener('norma-dados-atualizados', atualizarDados)
     }
   }, [])
 
+  function obterLotesDoProduto(produtoId: number) {
+    return lotes.filter((lote) => lote.produtoId === produtoId)
+  }
+
   function estaProximoDoVencimento(validade: string) {
-    if (!validade) {
-      return false
-    }
+    if (!validade) return false
 
     const hoje = new Date()
     hoje.setHours(0, 0, 0, 0)
@@ -61,15 +73,37 @@ function Estoque() {
     const limite = new Date(hoje)
     limite.setDate(limite.getDate() + 30)
 
-    return dataValidade >= hoje && dataValidade <= limite
+    return (
+      !Number.isNaN(dataValidade.getTime()) &&
+      dataValidade >= hoje &&
+      dataValidade <= limite
+    )
   }
 
   function formatarData(data: string) {
-    if (!data) {
+    if (!data) return 'Não informada'
+
+    const dataFormatada = new Date(`${data}T12:00:00`)
+
+    if (Number.isNaN(dataFormatada.getTime())) {
       return 'Não informada'
     }
 
-    return new Date(`${data}T12:00:00`).toLocaleDateString('pt-BR')
+    return dataFormatada.toLocaleDateString('pt-BR')
+  }
+
+  function produtoTemValidadeProxima(produto: Produto) {
+    const lotesProduto = obterLotesDoProduto(produto.id)
+
+    if (lotesProduto.length > 0) {
+      return lotesProduto.some(
+        (lote) =>
+          lote.quantidadeDisponivel > 0 &&
+          estaProximoDoVencimento(lote.validade),
+      )
+    }
+
+    return estaProximoDoVencimento(produto.validade)
   }
 
   const produtosBaixos = produtos.filter(
@@ -79,11 +113,11 @@ function Estoque() {
   )
 
   const produtosZerados = produtos.filter(
-    (produto) => produto.quantidade === 0,
+    (produto) => produto.quantidade <= 0,
   )
 
   const produtosVencimento = produtos.filter((produto) =>
-    estaProximoDoVencimento(produto.validade),
+    produtoTemValidadeProxima(produto),
   )
 
   const produtosNormais = produtos.filter(
@@ -105,9 +139,9 @@ function Estoque() {
         produto.quantidade > 0 &&
         produto.quantidade <= produto.estoqueMinimo
     } else if (filtro === 'zerado') {
-      correspondeFiltro = produto.quantidade === 0
+      correspondeFiltro = produto.quantidade <= 0
     } else if (filtro === 'validade') {
-      correspondeFiltro = estaProximoDoVencimento(produto.validade)
+      correspondeFiltro = produtoTemValidadeProxima(produto)
     } else if (filtro === 'normal') {
       correspondeFiltro = produto.quantidade > produto.estoqueMinimo
     }
@@ -120,8 +154,8 @@ function Estoque() {
       <div className="estoque-header">
         <h2>Controle de estoque</h2>
         <p>
-          Acompanhe as quantidades disponíveis e identifique os produtos
-          que precisam de atenção.
+          Acompanhe as quantidades disponíveis, os lotes e as validades
+          dos produtos.
         </p>
       </div>
 
@@ -147,7 +181,7 @@ function Estoque() {
         <article className="estoque-card estoque-card-validade">
           <span>Próximos do vencimento</span>
           <strong>{produtosVencimento.length}</strong>
-          <small>Vencem nos próximos 30 dias</small>
+          <small>Produtos com lotes que vencem em até 30 dias</small>
         </article>
       </div>
 
@@ -192,12 +226,12 @@ function Estoque() {
             <table>
               <thead>
                 <tr>
+                  <th></th>
                   <th>Código</th>
                   <th>Produto</th>
                   <th>Marca</th>
-                  <th>Quantidade</th>
+                  <th>Quantidade total</th>
                   <th>Estoque mínimo</th>
-                  <th>Validade</th>
                   <th>Situação</th>
                 </tr>
               </thead>
@@ -207,41 +241,131 @@ function Estoque() {
                   let situacao = 'Normal'
                   let classeSituacao = 'situacao-normal'
 
-                  if (produto.quantidade === 0) {
+                  if (produto.quantidade <= 0) {
                     situacao = 'Sem estoque'
                     classeSituacao = 'situacao-zerado'
-                  } else if (
-                    produto.quantidade <= produto.estoqueMinimo
-                  ) {
+                  } else if (produto.quantidade <= produto.estoqueMinimo) {
                     situacao = 'Estoque baixo'
                     classeSituacao = 'situacao-baixo'
                   }
 
-                  const proximoVencimento = estaProximoDoVencimento(
-                    produto.validade,
+                  const lotesProduto = obterLotesDoProduto(produto.id)
+                  const totalNosLotes = lotesProduto.reduce(
+                    (total, lote) =>
+                      total + Math.max(0, lote.quantidadeDisponivel),
+                    0,
                   )
 
+                  // Quantidade antiga que ainda não foi associada a um lote.
+                  const quantidadeSemLote = Math.max(
+                    0,
+                    produto.quantidade - totalNosLotes,
+                  )
+
+                  const expandido = produtoExpandido === produto.id
+
                   return (
-                    <tr key={produto.id}>
-                      <td>{produto.codigo}</td>
-                      <td>{produto.nome}</td>
-                      <td>{produto.marca}</td>
-                      <td>{produto.quantidade}</td>
-                      <td>{produto.estoqueMinimo}</td>
-                      <td>
-                        {formatarData(produto.validade)}
-                        {proximoVencimento && (
-                          <span className="aviso-validade">
-                            Próximo do vencimento
+                    <>
+                      <tr key={produto.id}>
+                        <td>
+                          <button
+                            type="button"
+                            className="estoque-botao-lotes"
+                            onClick={() =>
+                              setProdutoExpandido(
+                                expandido ? null : produto.id,
+                              )
+                            }
+                            aria-expanded={expandido}
+                            title="Ver detalhes dos lotes"
+                          >
+                            {expandido ? '−' : '+'}
+                          </button>
+                        </td>
+                        <td>{produto.codigo}</td>
+                        <td>{produto.nome}</td>
+                        <td>{produto.marca}</td>
+                        <td>{produto.quantidade}</td>
+                        <td>{produto.estoqueMinimo}</td>
+                        <td>
+                          <span className={`situacao ${classeSituacao}`}>
+                            {situacao}
                           </span>
-                        )}
-                      </td>
-                      <td>
-                        <span className={`situacao ${classeSituacao}`}>
-                          {situacao}
-                        </span>
-                      </td>
-                    </tr>
+                        </td>
+                      </tr>
+
+                      {expandido && (
+                        <tr key={`${produto.id}-lotes`}>
+                          <td colSpan={7}>
+                            <div className="estoque-detalhes-lotes">
+                              <h4>Lotes de {produto.nome}</h4>
+
+                              {lotesProduto.length === 0 ? (
+                                <p>
+                                  Nenhum lote registrado para este produto.
+                                  A quantidade atual é mantida como estoque
+                                  sem lote registrado.
+                                </p>
+                              ) : (
+                                <div className="tabela-estoque">
+                                  <table>
+                                    <thead>
+                                      <tr>
+                                        <th>Lote</th>
+                                        <th>Quantidade disponível</th>
+                                        <th>Validade</th>
+                                        <th>Fornecedor</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {lotesProduto.map((lote) => (
+                                        <tr key={lote.id}>
+                                          <td>{lote.lote || 'Não informado'}</td>
+                                          <td>{lote.quantidadeDisponivel}</td>
+                                          <td>
+                                            {formatarData(lote.validade)}
+                                            {estaProximoDoVencimento(
+                                              lote.validade,
+                                            ) &&
+                                              lote.quantidadeDisponivel > 0 && (
+                                                <span className="aviso-validade">
+                                                  Próximo do vencimento
+                                                </span>
+                                              )}
+                                          </td>
+                                          <td>
+                                            {lote.fornecedorNome ||
+                                              'Não informado'}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+
+                              {quantidadeSemLote > 0 && (
+                                <p className="estoque-sem-lote">
+                                  <strong>{quantidadeSemLote}</strong>{' '}
+                                  unidade(s) ainda não vinculada(s) a um lote.
+                                  Esse saldo foi preservado do estoque anterior.
+                                </p>
+                              )}
+
+                              {lotesProduto.length > 0 &&
+                                totalNosLotes > produto.quantidade && (
+                                  <p className="estoque-aviso-divergencia">
+                                    Atenção: a soma das quantidades dos lotes
+                                    é maior que o estoque total do produto.
+                                    Confira os registros antes de movimentar
+                                    esse estoque.
+                                  </p>
+                                )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   )
                 })}
               </tbody>

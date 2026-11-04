@@ -8,14 +8,17 @@ type SidebarProps = {
 function Sidebar({ onMenuClick }: SidebarProps) {
   const [menuAtivo, setMenuAtivo] = useState('Dashboard')
 
-  const menus = [
-    'Dashboard',
-    'Clientes',
-    'Produtos',
-    'Estoque',
-    'Vendas',
-    'Financeiro',
-  ]
+ const menus = [
+  'Dashboard',
+  'Clientes',
+  'Produtos',
+  'Fornecedores',
+  'Compras',
+  'Estoque',
+  'Histórico de Movimentações',
+  'Vendas',
+  'Financeiro'
+]
 
   function handleMenuClick(menu: string) {
     setMenuAtivo(menu)
