@@ -1,384 +1,134 @@
-
 import { useEffect, useState } from 'react'
-import type { LoteEstoque } from '../types/estoque'
 
-type Produto = {
-  id: number
-  codigo: string
-  nome: string
-  marca: string
-  categoria: string
-  precoCusto: number
-  precoVenda: number
-  quantidade: number
-  estoqueMinimo: number
-  validade: string
-  lote: string
-  fornecedor: string
-}
-
-type FiltroEstoque = 'todos' | 'baixo' | 'zerado' | 'validade' | 'normal'
-
-function lerProdutosSalvos(): Produto[] {
-  try {
-    const dados = localStorage.getItem('norma-produtos')
-    return dados ? (JSON.parse(dados) as Produto[]) : []
-  } catch {
-    return []
-  }
-}
-
-function lerLotesSalvos(): LoteEstoque[] {
-  try {
-    const dados = localStorage.getItem('norma-lotes')
-    return dados ? (JSON.parse(dados) as LoteEstoque[]) : []
-  } catch {
-    return []
-  }
-}
-
-function Estoque() {
-  const [produtos, setProdutos] = useState<Produto[]>(lerProdutosSalvos)
-  const [lotes, setLotes] = useState<LoteEstoque[]>(lerLotesSalvos)
+export default function Estoque() {
+  const [produtos, setProdutos] = useState<any[]>([])
+  const [lotes, setLotes] = useState<any[]>([])
   const [busca, setBusca] = useState('')
-  const [filtro, setFiltro] = useState<FiltroEstoque>('todos')
-  const [produtoExpandido, setProdutoExpandido] = useState<number | null>(null)
 
   useEffect(() => {
-    function atualizarDados() {
-      setProdutos(lerProdutosSalvos())
-      setLotes(lerLotesSalvos())
-    }
-
-    window.addEventListener('storage', atualizarDados)
-    window.addEventListener('norma-dados-atualizados', atualizarDados)
-
-    return () => {
-      window.removeEventListener('storage', atualizarDados)
-      window.removeEventListener('norma-dados-atualizados', atualizarDados)
+    try {
+      const p = JSON.parse(localStorage.getItem('norma-produtos') || '[]')
+      const l = JSON.parse(localStorage.getItem('norma-lotes') || '[]')
+      setProdutos(p)
+      setLotes(l)
+    } catch {
+      // Ignora erro
     }
   }, [])
 
-  function obterLotesDoProduto(produtoId: number) {
-    return lotes.filter((lote) => lote.produtoId === produtoId)
-  }
-
-  function estaProximoDoVencimento(validade: string) {
-    if (!validade) return false
-
-    const hoje = new Date()
-    hoje.setHours(0, 0, 0, 0)
-
-    const dataValidade = new Date(`${validade}T00:00:00`)
-    const limite = new Date(hoje)
-    limite.setDate(limite.getDate() + 30)
-
-    return (
-      !Number.isNaN(dataValidade.getTime()) &&
-      dataValidade >= hoje &&
-      dataValidade <= limite
-    )
-  }
-
-  function formatarData(data: string) {
-    if (!data) return 'Não informada'
-
-    const dataFormatada = new Date(`${data}T12:00:00`)
-
-    if (Number.isNaN(dataFormatada.getTime())) {
-      return 'Não informada'
+  function exportarEstoqueCSV() {
+    if (produtos.length === 0) {
+      alert('Não há produtos no estoque para exportar.')
+      return
     }
 
-    return dataFormatada.toLocaleDateString('pt-BR')
+    let csvContent = 'data:text/csv;charset=utf-8,Codigo;Nome;Marca;Categoria;Preco Venda;Quantidade;Estoque Minimo\n'
+    produtos.forEach((p) => {
+      csvContent += `${p.codigo};"${p.nome}";"${p.marca}";"${p.categoria || 'Geral'}";${p.precoVenda};${p.quantidade};${p.estoqueMinimo || 5}\n`
+    })
+
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement('a')
+    link.setAttribute('href', encodedUri)
+    link.setAttribute('download', `inventario_estoque_norma_${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
-  function produtoTemValidadeProxima(produto: Produto) {
-    const lotesProduto = obterLotesDoProduto(produto.id)
-
-    if (lotesProduto.length > 0) {
-      return lotesProduto.some(
-        (lote) =>
-          lote.quantidadeDisponivel > 0 &&
-          estaProximoDoVencimento(lote.validade),
-      )
-    }
-
-    return estaProximoDoVencimento(produto.validade)
-  }
-
-  const produtosBaixos = produtos.filter(
-    (produto) =>
-      produto.quantidade > 0 &&
-      produto.quantidade <= produto.estoqueMinimo,
-  )
-
-  const produtosZerados = produtos.filter(
-    (produto) => produto.quantidade <= 0,
-  )
-
-  const produtosVencimento = produtos.filter((produto) =>
-    produtoTemValidadeProxima(produto),
-  )
-
-  const produtosNormais = produtos.filter(
-    (produto) => produto.quantidade > produto.estoqueMinimo,
-  )
-
-  const produtosFiltrados = produtos.filter((produto) => {
-    const termo = busca.trim().toLowerCase()
-
-    const correspondeBusca =
-      produto.nome.toLowerCase().includes(termo) ||
-      produto.codigo.toLowerCase().includes(termo) ||
-      produto.marca.toLowerCase().includes(termo)
-
-    let correspondeFiltro = true
-
-    if (filtro === 'baixo') {
-      correspondeFiltro =
-        produto.quantidade > 0 &&
-        produto.quantidade <= produto.estoqueMinimo
-    } else if (filtro === 'zerado') {
-      correspondeFiltro = produto.quantidade <= 0
-    } else if (filtro === 'validade') {
-      correspondeFiltro = produtoTemValidadeProxima(produto)
-    } else if (filtro === 'normal') {
-      correspondeFiltro = produto.quantidade > produto.estoqueMinimo
-    }
-
-    return correspondeBusca && correspondeFiltro
-  })
+  const produtosBaixos = produtos.filter(p => Number(p.quantidade) <= Number(p.estoqueMinimo || 5))
 
   return (
-    <section className="estoque-page">
-      <div className="estoque-header">
-        <h2>Controle de estoque</h2>
-        <p>
-          Acompanhe as quantidades disponíveis, os lotes e as validades
-          dos produtos.
-        </p>
+    <div style={{ padding: '24px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'Segoe UI, sans-serif' }}>
+      
+      {/* Cabeçalho */}
+      <div style={{ backgroundColor: '#581c87', borderRadius: '12px', padding: '16px 24px', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+        <div>
+          <h1 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>Controle de Estoque & Lotes</h1>
+          <span style={{ fontSize: '12px', opacity: 0.8 }}>Monitore níveis críticos e validades</span>
+        </div>
+        <button
+          type="button"
+          onClick={exportarEstoqueCSV}
+          style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', color: 'white', padding: '8px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+        >
+          📥 Exportar Inventário (CSV)
+        </button>
       </div>
 
-      <div className="estoque-resumos">
-        <article className="estoque-card">
-          <span>Total de produtos</span>
-          <strong>{produtos.length}</strong>
-          <small>Produtos cadastrados</small>
-        </article>
-
-        <article className="estoque-card estoque-card-alerta">
-          <span>Estoque baixo</span>
-          <strong>{produtosBaixos.length}</strong>
-          <small>Precisam de reposição</small>
-        </article>
-
-        <article className="estoque-card estoque-card-zerado">
-          <span>Sem estoque</span>
-          <strong>{produtosZerados.length}</strong>
-          <small>Quantidade igual a zero</small>
-        </article>
-
-        <article className="estoque-card estoque-card-validade">
-          <span>Próximos do vencimento</span>
-          <strong>{produtosVencimento.length}</strong>
-          <small>Produtos com lotes que vencem em até 30 dias</small>
-        </article>
-      </div>
-
-      <section className="estoque-lista">
-        <h3>Produtos em estoque</h3>
-
-        <div className="estoque-filtros">
-          <input
-            type="search"
-            placeholder="Buscar por nome, código ou marca..."
-            aria-label="Buscar produtos no estoque"
-            value={busca}
-            onChange={(event) => setBusca(event.target.value)}
-          />
-
-          <select
-            aria-label="Filtrar produtos por situação"
-            value={filtro}
-            onChange={(event) =>
-              setFiltro(event.target.value as FiltroEstoque)
-            }
-          >
-            <option value="todos">Todas as situações</option>
-            <option value="baixo">Estoque baixo</option>
-            <option value="zerado">Sem estoque</option>
-            <option value="validade">Próximos do vencimento</option>
-            <option value="normal">Estoque normal</option>
-          </select>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+        <div style={{ background: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+          <h2 style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e293b', marginBottom: '12px' }}>🚨 Alerta de Estoque Baixo ({produtosBaixos.length})</h2>
+          {produtosBaixos.length === 0 ? (
+            <p style={{ fontSize: '13px', color: '#10b981' }}>Tudo em ordem! Nenhum produto abaixo do mínimo.</p>
+          ) : (
+            produtosBaixos.map(p => (
+              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontSize: '13px' }}>
+                <span style={{ fontWeight: 600, color: '#334155' }}>{p.nome}</span>
+                <span style={{ color: '#ef4444', fontWeight: 'bold' }}>{p.quantidade} un. (Mín: {p.estoqueMinimo || 5})</span>
+              </div>
+            ))
+          )}
         </div>
 
-        {produtosFiltrados.length === 0 ? (
-          <div className="estoque-vazio">
-            <h3>Nenhum produto encontrado</h3>
-            <p>
-              {produtos.length === 0
-                ? 'Cadastre produtos na tela Produtos para acompanhar o estoque.'
-                : 'Altere a pesquisa ou escolha outra situação no filtro.'}
-            </p>
+        <div style={{ background: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+          <h2 style={{ fontSize: '15px', fontWeight: 'bold', color: '#1e293b', marginBottom: '12px' }}>📦 Resumo Geral do Estoque</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f1f5f9', fontSize: '13px' }}>
+            <span style={{ color: '#64748b' }}>Total de Produtos no Catálogo:</span>
+            <strong style={{ color: '#0f172a' }}>{produtos.length}</strong>
           </div>
-        ) : (
-          <div className="tabela-estoque">
-            <table>
-              <thead>
-                <tr>
-                  <th></th>
-                  <th>Código</th>
-                  <th>Produto</th>
-                  <th>Marca</th>
-                  <th>Quantidade total</th>
-                  <th>Estoque mínimo</th>
-                  <th>Situação</th>
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', fontSize: '13px' }}>
+            <span style={{ color: '#64748b' }}>Lotes Cadastrados:</span>
+            <strong style={{ color: '#0f172a' }}>{lotes.length}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+        <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#1e293b', marginBottom: '16px' }}>Saldo Atual de Produtos</h2>
+        <input
+          type="text"
+          placeholder="Filtrar produtos..."
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          style={{ width: '300px', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', marginBottom: '16px' }}
+        />
+
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid #f1f5f9', textAlign: 'left', color: '#475569' }}>
+              <th style={{ padding: '10px' }}>Código</th>
+              <th style={{ padding: '10px' }}>Produto</th>
+              <th style={{ padding: '10px' }}>Quantidade Total</th>
+              <th style={{ padding: '10px' }}>Estoque Mínimo</th>
+              <th style={{ padding: '10px' }}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {produtos.filter(p => p.nome.toLowerCase().includes(busca.toLowerCase())).map(p => {
+              const minimo = Number(p.estoqueMinimo || 5)
+              const atual = Number(p.quantidade || 0)
+              const baixo = atual <= minimo
+
+              return (
+                <tr key={p.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                  <td style={{ padding: '10px', color: '#64748b' }}>{p.codigo}</td>
+                  <td style={{ padding: '10px', fontWeight: 600, color: '#1e293b' }}>{p.nome}</td>
+                  <td style={{ padding: '10px', fontWeight: 'bold' }}>{atual} un.</td>
+                  <td style={{ padding: '10px', color: '#64748b' }}>{minimo} un.</td>
+                  <td style={{ padding: '10px' }}>
+                    {baixo ? (
+                      <span style={{ backgroundColor: '#fee2e2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 600 }}>Repor Estoque</span>
+                    ) : (
+                      <span style={{ backgroundColor: '#dcfce7', color: '#16a34a', padding: '4px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 600 }}>Normal</span>
+                    )}
+                  </td>
                 </tr>
-              </thead>
-
-              <tbody>
-                {produtosFiltrados.map((produto) => {
-                  let situacao = 'Normal'
-                  let classeSituacao = 'situacao-normal'
-
-                  if (produto.quantidade <= 0) {
-                    situacao = 'Sem estoque'
-                    classeSituacao = 'situacao-zerado'
-                  } else if (produto.quantidade <= produto.estoqueMinimo) {
-                    situacao = 'Estoque baixo'
-                    classeSituacao = 'situacao-baixo'
-                  }
-
-                  const lotesProduto = obterLotesDoProduto(produto.id)
-                  const totalNosLotes = lotesProduto.reduce(
-                    (total, lote) =>
-                      total + Math.max(0, lote.quantidadeDisponivel),
-                    0,
-                  )
-
-                  // Quantidade antiga que ainda não foi associada a um lote.
-                  const quantidadeSemLote = Math.max(
-                    0,
-                    produto.quantidade - totalNosLotes,
-                  )
-
-                  const expandido = produtoExpandido === produto.id
-
-                  return (
-                    <>
-                      <tr key={produto.id}>
-                        <td>
-                          <button
-                            type="button"
-                            className="estoque-botao-lotes"
-                            onClick={() =>
-                              setProdutoExpandido(
-                                expandido ? null : produto.id,
-                              )
-                            }
-                            aria-expanded={expandido}
-                            title="Ver detalhes dos lotes"
-                          >
-                            {expandido ? '−' : '+'}
-                          </button>
-                        </td>
-                        <td>{produto.codigo}</td>
-                        <td>{produto.nome}</td>
-                        <td>{produto.marca}</td>
-                        <td>{produto.quantidade}</td>
-                        <td>{produto.estoqueMinimo}</td>
-                        <td>
-                          <span className={`situacao ${classeSituacao}`}>
-                            {situacao}
-                          </span>
-                        </td>
-                      </tr>
-
-                      {expandido && (
-                        <tr key={`${produto.id}-lotes`}>
-                          <td colSpan={7}>
-                            <div className="estoque-detalhes-lotes">
-                              <h4>Lotes de {produto.nome}</h4>
-
-                              {lotesProduto.length === 0 ? (
-                                <p>
-                                  Nenhum lote registrado para este produto.
-                                  A quantidade atual é mantida como estoque
-                                  sem lote registrado.
-                                </p>
-                              ) : (
-                                <div className="tabela-estoque">
-                                  <table>
-                                    <thead>
-                                      <tr>
-                                        <th>Lote</th>
-                                        <th>Quantidade disponível</th>
-                                        <th>Validade</th>
-                                        <th>Fornecedor</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {lotesProduto.map((lote) => (
-                                        <tr key={lote.id}>
-                                          <td>{lote.lote || 'Não informado'}</td>
-                                          <td>{lote.quantidadeDisponivel}</td>
-                                          <td>
-                                            {formatarData(lote.validade)}
-                                            {estaProximoDoVencimento(
-                                              lote.validade,
-                                            ) &&
-                                              lote.quantidadeDisponivel > 0 && (
-                                                <span className="aviso-validade">
-                                                  Próximo do vencimento
-                                                </span>
-                                              )}
-                                          </td>
-                                          <td>
-                                            {lote.fornecedorNome ||
-                                              'Não informado'}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-
-                              {quantidadeSemLote > 0 && (
-                                <p className="estoque-sem-lote">
-                                  <strong>{quantidadeSemLote}</strong>{' '}
-                                  unidade(s) ainda não vinculada(s) a um lote.
-                                  Esse saldo foi preservado do estoque anterior.
-                                </p>
-                              )}
-
-                              {lotesProduto.length > 0 &&
-                                totalNosLotes > produto.quantidade && (
-                                  <p className="estoque-aviso-divergencia">
-                                    Atenção: a soma das quantidades dos lotes
-                                    é maior que o estoque total do produto.
-                                    Confira os registros antes de movimentar
-                                    esse estoque.
-                                  </p>
-                                )}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <p className="estoque-legenda">
-          Exibindo {produtosFiltrados.length} de {produtos.length} produtos.
-        </p>
-      </section>
-    </section>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   )
 }
-
-export default Estoque

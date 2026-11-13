@@ -15,6 +15,8 @@ type Produto = {
   marca: string
   precoVenda: number
   quantidade: number
+  categoria?: string
+  imagem?: string
 }
 
 type ItemVenda = {
@@ -60,7 +62,7 @@ function formatarMoeda(valor: number) {
   })
 }
 
-function Vendas() {
+export default function Vendas() {
   const [clientes, setClientes] = useState<Cliente[]>(() =>
     lerLista<Cliente>('norma-clientes'),
   )
@@ -83,13 +85,23 @@ function Vendas() {
 
   const produtosFiltrados = produtos.filter((produto) => {
     const termo = buscaProduto.trim().toLowerCase()
+    if (!termo) return true // Se busca vazia, exibe todos no catálogo
 
     return (
       produto.nome.toLowerCase().includes(termo) ||
       produto.codigo.toLowerCase().includes(termo) ||
-      produto.marca.toLowerCase().includes(termo)
+      produto.marca.toLowerCase().includes(termo) ||
+      (produto.categoria && produto.categoria.toLowerCase().includes(termo))
     )
   })
+
+  // Agrupar produtos por categoria para exibição em blocos iguais à referência
+  const produtosPorCategoria = produtosFiltrados.reduce((acc, produto) => {
+    const cat = produto.categoria || 'Geral'
+    if (!acc[cat]) acc[cat] = []
+    acc[cat].push(produto)
+    return acc
+  }, {} as Record<string, Produto[]>)
 
   const subtotal = itens.reduce(
     (total, item) => total + item.precoUnitario * item.quantidade,
@@ -175,7 +187,7 @@ function Vendas() {
       )
 
       mostrarMensagem(
-        `Não foi possível adicionar "${produtoAtual.nome}". Há somente ${quantidadeRestante} unidade(s) disponível(is) para adicionar.`,
+        `Não foi possível adicionar "${produtoAtual.nome}". Há somente ${quantidadeRestante} unidade(s) disponível(is).`,
         true,
       )
       return
@@ -207,15 +219,35 @@ function Vendas() {
     })
 
     setProdutos(produtosAtuais)
-
     setQuantidadesProdutos((quantidadesAtuais) => ({
       ...quantidadesAtuais,
       [produto.id]: '1',
     }))
 
     mostrarMensagem(
-      `${quantidadeEscolhida} unidade(s) de "${produtoAtual.nome}" adicionada(s) à venda.`,
+      `${quantidadeEscolhida} unidade(s) de "${produtoAtual.nome}" adicionada(s) ao carrinho.`,
     )
+  }
+
+  function alterarQuantidadeItemCarrinho(produtoId: number, novaQtd: number) {
+    if (novaQtd <= 0) {
+      removerProduto(produtoId)
+      return
+    }
+
+    const produtoOriginal = produtos.find(p => Number(p.id) === Number(produtoId))
+    const estoqueMax = produtoOriginal ? Number(produtoOriginal.quantidade) : 9999
+
+    if (novaQtd > estoqueMax) {
+      mostrarMensagem(`Estoque insuficiente. Máximo disponível: ${estoqueMax}`, true)
+      return
+    }
+
+    setItens(itens.map(item => 
+      Number(item.produtoId) === Number(produtoId) 
+        ? { ...item, quantidade: novaQtd } 
+        : item
+    ))
   }
 
   function removerProduto(produtoId: number) {
@@ -224,8 +256,7 @@ function Vendas() {
         (item) => Number(item.produtoId) !== Number(produtoId),
       ),
     )
-
-    mostrarMensagem('Produto removido da venda.')
+    mostrarMensagem('Produto removido do carrinho.')
   }
 
   function limparVenda() {
@@ -247,12 +278,11 @@ function Vendas() {
     }
 
     if (itens.length === 0) {
-      mostrarMensagem('Adicione pelo menos um produto à venda.', true)
+      mostrarMensagem('Adicione pelo menos um produto ao carrinho.', true)
       return
     }
 
     const hoje = new Date()
-
     const dataLocalHoje = [
       hoje.getFullYear(),
       String(hoje.getMonth() + 1).padStart(2, '0'),
@@ -264,14 +294,8 @@ function Vendas() {
       return
     }
 
-    if (
-      formaPagamento === 'Fiado' &&
-      dataVencimento < dataLocalHoje
-    ) {
-      mostrarMensagem(
-        'A data de vencimento não pode ser anterior a hoje.',
-        true,
-      )
+    if (formaPagamento === 'Fiado' && dataVencimento < dataLocalHoje) {
+      mostrarMensagem('A data de vencimento não pode ser anterior a hoje.', true)
       return
     }
 
@@ -279,8 +303,7 @@ function Vendas() {
     const produtosAtuais = lerLista<Produto>('norma-produtos')
     const vendasAtuais = lerLista<VendaSalva>('norma-vendas')
     const lotesAtuais = lerLista<LoteEstoque>('norma-lotes')
-    const movimentacoesAtuais =
-      lerLista<MovimentacaoEstoque>('norma-movimentacoes')
+    const movimentacoesAtuais = lerLista<MovimentacaoEstoque>('norma-movimentacoes')
 
     const clienteSelecionado = clientesAtuais.find(
       (cliente) => String(cliente.id) === clienteId,
@@ -288,49 +311,32 @@ function Vendas() {
 
     if (!clienteSelecionado) {
       setClientes(clientesAtuais)
-      mostrarMensagem(
-        'Cliente não encontrado. Confira o cadastro e tente novamente.',
-        true,
-      )
+      mostrarMensagem('Cliente não encontrado. Confira o cadastro.', true)
       return
     }
 
-    // Confere novamente o estoque antes de finalizar.
     for (const item of itens) {
       const produtoAtual = produtosAtuais.find(
         (produto) => Number(produto.id) === Number(item.produtoId),
       )
 
       if (!produtoAtual) {
-        mostrarMensagem(
-          `O produto "${item.nome}" não foi encontrado no cadastro.`,
-          true,
-        )
+        mostrarMensagem(`O produto "${item.nome}" não foi encontrado.`, true)
         return
       }
 
       const estoqueDisponivel = Number(produtoAtual.quantidade)
 
-      if (
-        !Number.isSafeInteger(item.quantidade) ||
-        item.quantidade <= 0 ||
-        !Number.isSafeInteger(estoqueDisponivel) ||
-        estoqueDisponivel < 0 ||
-        item.quantidade > estoqueDisponivel
-      ) {
+      if (item.quantidade > estoqueDisponivel) {
         atualizarDados()
         mostrarMensagem(
-          `VENDA BLOQUEADA! "${produtoAtual.nome}" possui ${Math.max(
-            0,
-            estoqueDisponivel || 0,
-          )} unidade(s), mas a venda solicita ${item.quantidade}. Nenhuma alteração foi feita.`,
+          `ESTOQUE INSUFICIENTE! "${produtoAtual.nome}" possui ${estoqueDisponivel} un., mas o carrinho pede ${item.quantidade}.`,
           true,
         )
         return
       }
     }
 
-    // Prepara as quantidades dos lotes sem salvar nada ainda.
     const lotesAtualizados = lotesAtuais.map((lote) => ({ ...lote }))
     const novasMovimentacoes: MovimentacaoEstoque[] = []
 
@@ -339,10 +345,7 @@ function Vendas() {
         (produto) => Number(produto.id) === Number(item.produtoId),
       )
 
-      if (!produtoAtual) {
-        mostrarMensagem(`Produto "${item.nome}" não encontrado.`, true)
-        return
-      }
+      if (!produtoAtual) return
 
       const lotesDoProduto = lotesAtualizados
         .filter(
@@ -354,38 +357,24 @@ function Vendas() {
           if (!a.validade && !b.validade) return 0
           if (!a.validade) return 1
           if (!b.validade) return -1
-
           return a.validade.localeCompare(b.validade)
         })
 
       const totalDisponivelNosLotesAntes = lotesDoProduto.reduce(
-        (total, lote) =>
-          total + Math.max(0, Number(lote.quantidadeDisponivel) || 0),
+        (total, lote) => total + Math.max(0, Number(lote.quantidadeDisponivel) || 0),
         0,
       )
 
       const estoqueTotal = Number(produtoAtual.quantidade)
-
-      const estoqueSemLoteAntes = Math.max(
-        0,
-        estoqueTotal - totalDisponivelNosLotesAntes,
-      )
+      const estoqueSemLoteAntes = Math.max(0, estoqueTotal - totalDisponivelNosLotesAntes)
 
       let quantidadeRestante = item.quantidade
 
-      // Dá baixa primeiro nos lotes que vencem mais cedo.
       for (const lote of lotesDoProduto) {
         if (quantidadeRestante <= 0) break
 
-        const disponivel = Math.max(
-          0,
-          Number(lote.quantidadeDisponivel) || 0,
-        )
-
-        const quantidadeBaixada = Math.min(
-          disponivel,
-          quantidadeRestante,
-        )
+        const disponivel = Math.max(0, Number(lote.quantidadeDisponivel) || 0)
+        const quantidadeBaixada = Math.min(disponivel, quantidadeRestante)
 
         if (quantidadeBaixada > 0) {
           lote.quantidadeDisponivel = disponivel - quantidadeBaixada
@@ -407,15 +396,6 @@ function Vendas() {
         }
       }
 
-      // O restante pode sair do estoque antigo, sem lote vinculado.
-      if (quantidadeRestante > estoqueSemLoteAntes) {
-        mostrarMensagem(
-          `Não foi possível distribuir a baixa dos lotes de "${item.nome}". Confira o estoque antes de tentar novamente.`,
-          true,
-        )
-        return
-      }
-
       if (quantidadeRestante > 0) {
         novasMovimentacoes.push({
           id: Date.now() + novasMovimentacoes.length + 1,
@@ -433,22 +413,16 @@ function Vendas() {
       }
     }
 
-    const total = itens.reduce(
-      (soma, item) => soma + item.precoUnitario * item.quantidade,
-      0,
-    )
+    const total = subtotal
 
     const produtosAtualizados = produtosAtuais.map((produto) => {
       const itemVendido = itens.find(
         (item) => Number(item.produtoId) === Number(produto.id),
       )
-
       if (!itemVendido) return produto
-
       return {
         ...produto,
-        quantidade:
-          Number(produto.quantidade) - Number(itemVendido.quantidade),
+        quantidade: Number(produto.quantidade) - Number(itemVendido.quantidade),
       }
     })
 
@@ -462,85 +436,26 @@ function Vendas() {
       total,
       formaPagamento,
       statusPagamento: formaPagamento === 'Fiado' ? 'Pendente' : 'Pago',
-      dataVencimento:
-        formaPagamento === 'Fiado' ? dataVencimento : null,
+      dataVencimento: formaPagamento === 'Fiado' ? dataVencimento : null,
     }
 
-    // Usa o mesmo ID da venda como origem das movimentações.
     const movimentacoesDaVenda = novasMovimentacoes.map((movimentacao) => ({
       ...movimentacao,
       origemId: novaVenda.id,
       data: novaVenda.data,
     }))
 
-    const produtosAnteriores = localStorage.getItem('norma-produtos')
-    const vendasAnteriores = localStorage.getItem('norma-vendas')
-    const lotesAnteriores = localStorage.getItem('norma-lotes')
-    const movimentacoesAnteriores = localStorage.getItem(
-      'norma-movimentacoes',
-    )
-
     try {
-      localStorage.setItem(
-        'norma-produtos',
-        JSON.stringify(produtosAtualizados),
-      )
-
-      localStorage.setItem(
-        'norma-vendas',
-        JSON.stringify([...vendasAtuais, novaVenda]),
-      )
-
-      localStorage.setItem(
-        'norma-lotes',
-        JSON.stringify(lotesAtualizados),
-      )
-
+      localStorage.setItem('norma-produtos', JSON.stringify(produtosAtualizados))
+      localStorage.setItem('norma-vendas', JSON.stringify([...lerLista('norma-vendas'), novaVenda]))
+      localStorage.setItem('norma-lotes', JSON.stringify(lotesAtualizados))
       localStorage.setItem(
         'norma-movimentacoes',
-        JSON.stringify([
-          ...movimentacoesAtuais,
-          ...movimentacoesDaVenda,
-        ]),
+        JSON.stringify([...lerLista('norma-movimentacoes'), ...movimentacoesDaVenda]),
       )
     } catch {
-      // Tenta restaurar os dados anteriores caso alguma gravação falhe.
-      try {
-        if (produtosAnteriores === null) {
-          localStorage.removeItem('norma-produtos')
-        } else {
-          localStorage.setItem('norma-produtos', produtosAnteriores)
-        }
-
-        if (vendasAnteriores === null) {
-          localStorage.removeItem('norma-vendas')
-        } else {
-          localStorage.setItem('norma-vendas', vendasAnteriores)
-        }
-
-        if (lotesAnteriores === null) {
-          localStorage.removeItem('norma-lotes')
-        } else {
-          localStorage.setItem('norma-lotes', lotesAnteriores)
-        }
-
-        if (movimentacoesAnteriores === null) {
-          localStorage.removeItem('norma-movimentacoes')
-        } else {
-          localStorage.setItem(
-            'norma-movimentacoes',
-            movimentacoesAnteriores,
-          )
-        }
-      } catch {
-        // O armazenamento pode estar indisponível.
-      }
-
       atualizarDados()
-      mostrarMensagem(
-        'Não foi possível salvar a venda. Confira o estoque e tente novamente.',
-        true,
-      )
+      mostrarMensagem('Erro ao salvar venda no armazenamento.', true)
       return
     }
 
@@ -548,269 +463,356 @@ function Vendas() {
     setClientes(clientesAtuais)
 
     mostrarMensagem(
-      `Venda registrada com sucesso! Total: ${formatarMoeda(total)}. ` +
-        (formaPagamento === 'Fiado'
-          ? `Pagamento pendente. Vencimento: ${dataVencimento
-              .split('-')
-              .reverse()
-              .join('/')}.`
-          : 'Pagamento registrado como pago.'),
+      `Venda finalizada com sucesso! Total: ${formatarMoeda(total)}.`,
     )
 
-    setClienteId('')
-    setBuscaProduto('')
-    setQuantidadesProdutos({})
-    setItens([])
-    setFormaPagamento('Pix')
-    setDataVencimento('')
-
+    limparVenda()
     window.dispatchEvent(new Event('norma-dados-atualizados'))
   }
 
   return (
-    <div className="vendas-page">
-      <div className="vendas-introducao">
-        <h2>Nova venda</h2>
-        <p>Selecione o cliente e adicione os produtos da compra.</p>
+    <div style={{ padding: '24px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'Segoe UI, sans-serif' }}>
+      
+      {/* Cabeçalho da Página */}
+      <div style={{ marginBottom: '20px' }}>
+        <h1 style={{ fontSize: '24px', fontWeight: 'bold', color: '#0f172a', margin: 0 }}>Tela de Vendas</h1>
+        <p style={{ color: '#64748b', fontSize: '14px', margin: '4px 0 0 0' }}>Selecione os produtos do catálogo e finalize o pedido do cliente.</p>
       </div>
 
-      <section className="vendas-secao">
-        <h3>1. Selecionar cliente</h3>
+      {/* Layout de 3 Colunas IDÊNTICO À REFERÊNCIA */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px 340px', gap: '20px', alignItems: 'start' }}>
+        
+        {/* COLUNA 1: CATÁLOGO DE PRODUTOS */}
+        <div style={{ background: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+          <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#1e293b', marginBottom: '14px' }}>Catálogo de Produtos</h2>
 
-        <label htmlFor="cliente-venda">Cliente</label>
+          {/* Barra de Busca */}
+          <div style={{ position: 'relative', marginBottom: '20px' }}>
+            <span style={{ position: 'absolute', left: '14px', top: '12px', color: '#94a3b8' }}>🔍</span>
+            <input
+              type="text"
+              placeholder="Buscar produto (nome, marca, código...)"
+              value={buscaProduto}
+              onChange={(e) => setBuscaProduto(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 14px 10px 40px',
+                borderRadius: '10px',
+                border: '1px solid #e2e8f0',
+                outline: 'none',
+                fontSize: '14px',
+                backgroundColor: '#f8fafc'
+              }}
+            />
+          </div>
 
-        <select
-          id="cliente-venda"
-          value={clienteId}
-          onChange={(evento) => setClienteId(evento.target.value)}
-        >
-          <option value="">Selecione um cliente</option>
+          {/* Listagem por Categoria em Cards */}
+          {Object.keys(produtosPorCategoria).length === 0 ? (
+            <p style={{ textAlign: 'center', color: '#94a3b8', padding: '40px 0' }}>Nenhum produto cadastrado ou encontrado.</p>
+          ) : (
+            Object.entries(produtosPorCategoria).map(([categoria, prods]) => (
+              <div key={categoria} style={{ marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#475569', marginBottom: '12px', textTransform: 'capitalize' }}>
+                  {categoria}
+                </h3>
 
-          {clientes.map((cliente) => (
-            <option key={cliente.id} value={String(cliente.id)}>
-              {cliente.nome}
-            </option>
-          ))}
-        </select>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
+                  {prods.map((produto) => {
+                    const qtdInput = quantidadesProdutos[produto.id] ?? '1'
+                    const semEstoque = Number(produto.quantidade) <= 0
 
-        {clientes.length === 0 && (
-          <p className="vendas-aviso">
-            Nenhum cliente cadastrado. Cadastre um cliente antes de realizar
-            a venda.
-          </p>
-        )}
-      </section>
+                    return (
+                      <div
+                        key={produto.id}
+                        style={{
+                          border: '1px solid #f1f5f9',
+                          borderRadius: '12px',
+                          padding: '12px',
+                          backgroundColor: '#fff',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                        }}
+                      >
+                        <div>
+                          <div style={{ height: '70px', background: '#f8fafc', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', marginBottom: '8px' }}>
+                            🧴
+                          </div>
+                          <strong style={{ fontSize: '13px', color: '#1e293b', display: 'block', lineHeight: '1.3', marginBottom: '4px' }}>
+                            {produto.nome}
+                          </strong>
+                          <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '6px' }}>
+                            {produto.marca}
+                          </span>
+                          <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#6d28d9', display: 'block' }}>
+                            {formatarMoeda(Number(produto.precoVenda) || 0)}
+                          </span>
+                          <span style={{ fontSize: '10px', color: semEstoque ? '#ef4444' : '#10b981', display: 'block', marginBottom: '8px' }}>
+                            Estoque: {Number(produto.quantidade) || 0} un.
+                          </span>
+                        </div>
 
-      <section className="vendas-secao">
-        <h3>2. Adicionar produtos</h3>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '8px' }}>
+                          <input
+                            type="number"
+                            min="1"
+                            value={qtdInput}
+                            onChange={(e) => alterarQuantidadeProduto(produto.id, e.target.value)}
+                            style={{ width: '45px', padding: '6px', textAlign: 'center', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '12px' }}
+                          />
+                          <button
+                            type="button"
+                            disabled={semEstoque}
+                            onClick={() => adicionarProduto(produto)}
+                            style={{
+                              flex: 1,
+                              backgroundColor: semEstoque ? '#cbd5e1' : '#6d28d9',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              padding: '6px',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              cursor: semEstoque ? 'not-allowed' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                           
+                              justifyContent: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <span>+</span> Adicionar
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
 
-        <label htmlFor="busca-produto-venda">Buscar produto</label>
+        {/* COLUNA 2: CARRINHO DE COMPRAS */}
+        <div style={{ background: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+          <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#1e293b', marginBottom: '14px' }}>Carrinho de Compras</h2>
 
-        <input
-          id="busca-produto-venda"
-          type="text"
-          placeholder="Digite o nome, código ou marca..."
-          value={buscaProduto}
-          onChange={(evento) => setBuscaProduto(evento.target.value)}
-        />
+          {/* Seleção de Cliente */}
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
+              Cliente da Venda *
+            </label>
+            <select
+              value={clienteId}
+              onChange={(e) => setClienteId(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: '10px',
+                border: '1px solid #cbd5e1',
+                fontSize: '13px',
+                backgroundColor: '#fff',
+                outline: 'none'
+              }}
+            >
+              <option value="">Selecione o cliente...</option>
+              {clientes.map((cli) => (
+                <option key={cli.id} value={cli.id}>
+                  {cli.nome}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        {buscaProduto.trim() !== '' && (
-          <div className="vendas-resultados">
-            {produtosFiltrados.length === 0 ? (
-              <p>Nenhum produto encontrado.</p>
+          <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '14px 0' }} />
+
+          {/* Lista de Itens no Carrinho */}
+          <div style={{ minHeight: '220px', maxHeight: '340px', overflowY: 'auto', marginBottom: '16px' }}>
+            {itens.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px 0', fontSize: '13px' }}>
+                🛒 Carrinho vazio. Adicione produtos ao lado.
+              </div>
             ) : (
-              produtosFiltrados.map((produto) => (
-                <div className="vendas-produto" key={produto.id}>
-                  <div>
-                    <strong>{produto.nome}</strong>
-                    <span>
-                      {produto.marca} · Código: {produto.codigo}
-                    </span>
-                    <span>
-                      Preço:{' '}
-                      {formatarMoeda(Number(produto.precoVenda) || 0)}
-                    </span>
-                    <span>
-                      Estoque: {Number(produto.quantidade) || 0} unidade(s)
-                    </span>
+              itens.map((item) => (
+                <div
+                  key={item.produtoId}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 0',
+                    borderBottom: '1px solid #f8fafc'
+                  }}
+                >
+                  <div style={{ flex: 1, paddingRight: '8px' }}>
+                    <strong style={{ fontSize: '13px', color: '#1e293b', display: 'block' }}>{item.nome}</strong>
+                    <span style={{ fontSize: '11px', color: '#64748b' }}>{formatarMoeda(item.precoUnitario)} un.</span>
                   </div>
 
-                  <div className="vendas-produto-acoes">
-                    <label htmlFor={`quantidade-produto-${produto.id}`}>
-                      Qtd.
-                    </label>
-
-                    <input
-                      id={`quantidade-produto-${produto.id}`}
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={quantidadesProdutos[produto.id] ?? '1'}
-                      onChange={(evento) =>
-                        alterarQuantidadeProduto(
-                          produto.id,
-                          evento.target.value,
-                        )
-                      }
-                    />
-
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <button
                       type="button"
-                      disabled={Number(produto.quantidade) <= 0}
-                      onClick={() => adicionarProduto(produto)}
+                      onClick={() => alterarQuantidadeItemCarrinho(item.produtoId, item.quantidade - 1)}
+                      style={{ width: '24px', height: '24px', background: '#f1f5f9', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
                     >
-                      Adicionar
+                      -
+                    </button>
+                    <span style={{ fontSize: '13px', fontWeight: 'bold', width: '20px', textAlign: 'center' }}>{item.quantidade}</span>
+                    <button
+                      type="button"
+                      onClick={() => alterarQuantidadeItemCarrinho(item.produtoId, item.quantidade + 1)}
+                      style={{ width: '24px', height: '24px', background: '#f1f5f9', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+                    >
+                      +
                     </button>
                   </div>
+
+                  <div style={{ textAlign: 'right', minWidth: '70px', marginLeft: '10px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>
+                      {formatarMoeda(item.precoUnitario * item.quantidade)}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => removerProduto(item.produtoId)}
+                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', marginLeft: '8px', fontSize: '14px' }}
+                    title="Remover item"
+                  >
+                    🗑️
+                  </button>
                 </div>
               ))
             )}
           </div>
-        )}
-
-        {produtos.length === 0 && (
-          <p className="vendas-aviso">
-            Nenhum produto cadastrado. Cadastre produtos antes de realizar
-            uma venda.
-          </p>
-        )}
-      </section>
-
-      <section className="vendas-secao">
-        <h3>3. Resumo da venda</h3>
-
-        {itens.length === 0 ? (
-          <p className="vendas-vazio">Nenhum produto adicionado ainda.</p>
-        ) : (
-          <div className="vendas-tabela-container">
-            <table className="vendas-tabela">
-              <thead>
-                <tr>
-                  <th>Produto</th>
-                  <th>Preço</th>
-                  <th>Qtd.</th>
-                  <th>Total</th>
-                  <th>Ação</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {itens.map((item) => (
-                  <tr key={item.produtoId}>
-                    <td>
-                      <strong>{item.nome}</strong>
-                      <span className="vendas-marca">{item.marca}</span>
-                    </td>
-                    <td>{formatarMoeda(item.precoUnitario)}</td>
-                    <td>{item.quantidade}</td>
-                    <td>
-                      {formatarMoeda(
-                        item.precoUnitario * item.quantidade,
-                      )}
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="vendas-remover"
-                        onClick={() => removerProduto(item.produtoId)}
-                      >
-                        Remover
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className="vendas-total">
-          <span>Subtotal</span>
-          <strong>{formatarMoeda(subtotal)}</strong>
         </div>
 
-        <div className="vendas-pagamento">
-          <label htmlFor="forma-pagamento">Forma de pagamento</label>
+        {/* COLUNA 3: RESUMO DA VENDA & PAGAMENTO */}
+        <div style={{ background: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+          <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#1e293b', marginBottom: '14px' }}>Resumo & Pagamento</h2>
 
-          <select
-            id="forma-pagamento"
-            value={formaPagamento}
-            onChange={(evento) =>
-              setFormaPagamento(evento.target.value as FormaPagamento)
-            }
-          >
-            <option value="Pix">Pix</option>
-            <option value="Dinheiro">Dinheiro</option>
-            <option value="Cartão">Cartão</option>
-            <option value="Fiado">Fiado</option>
-          </select>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#64748b', marginBottom: '10px' }}>
+            <span>Subtotal:</span>
+            <span>{formatarMoeda(subtotal)}</span>
+          </div>
+
+          <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '14px 0' }} />
+
+          <div style={{ marginBottom: '16px' }}>
+            <span style={{ fontSize: '12px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>Total a Pagar:</span>
+            <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#6d28d9', marginTop: '4px' }}>
+              {formatarMoeda(subtotal)}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
+              Forma de Pagamento
+            </label>
+            <select
+              value={formaPagamento}
+              onChange={(e) => setFormaPagamento(e.target.value as FormaPagamento)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                borderRadius: '10px',
+                border: '1px solid #cbd5e1',
+                fontSize: '13px',
+                backgroundColor: '#fff',
+                outline: 'none',
+                fontWeight: 600,
+                color: '#1e293b'
+              }}
+            >
+              <option value="Pix">💠 Pix</option>
+              <option value="Cartão">💳 Cartão (Crédito/Débito)</option>
+              <option value="Dinheiro">💵 Dinheiro</option>
+              <option value="Fiado">📝 Fiado (Pendente)</option>
+            </select>
+          </div>
 
           {formaPagamento === 'Fiado' && (
-            <>
-              <label htmlFor="vencimento-fiado">Data de vencimento</label>
-
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
+                Data de Vencimento *
+              </label>
               <input
-                id="vencimento-fiado"
                 type="date"
                 value={dataVencimento}
-                min={(() => {
-                  const hoje = new Date()
-
-                  return `${hoje.getFullYear()}-${String(
-                    hoje.getMonth() + 1,
-                  ).padStart(2, '0')}-${String(hoje.getDate()).padStart(
-                    2,
-                    '0',
-                  )}`
-                })()}
-                onChange={(evento) =>
-                  setDataVencimento(evento.target.value)
-                }
-                required
+                onChange={(e) => setDataVencimento(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '9px',
+                  borderRadius: '10px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '13px'
+                }}
               />
-
-              <p className="vendas-aviso">
-                A venda será registrada como pagamento pendente.
-              </p>
-            </>
+            </div>
           )}
+
+          {/* Botões de Ação */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
+            <button
+              type="button"
+              disabled={!clienteId || itens.length === 0}
+              onClick={finalizarVenda}
+              style={{
+                width: '100%',
+                backgroundColor: (!clienteId || itens.length === 0) ? '#cbd5e1' : '#6d28d9',
+                color: 'white',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '12px',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                cursor: (!clienteId || itens.length === 0) ? 'not-allowed' : 'pointer',
+                boxShadow: '0 4px 10px rgba(109, 40, 217, 0.2)'
+              }}
+            >
+              Finalizar Venda
+            </button>
+
+            <button
+              type="button"
+              onClick={limparVenda}
+              style={{
+                width: '100%',
+                backgroundColor: 'white',
+                color: '#64748b',
+                border: '1px solid #cbd5e1',
+                borderRadius: '10px',
+                padding: '10px',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+            >
+              Limpar Carrinho
+            </button>
+          </div>
+
+          {/* Mensagem de Feedback */}
+          {mensagem && (
+            <div
+              style={{
+                marginTop: '14px',
+                padding: '10px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                backgroundColor: erro ? '#fef2f2' : '#f0fdf4',
+                color: erro ? '#dc2626' : '#16a34a',
+                border: `1px solid ${erro ? '#fca5a5' : '#86efac'}`
+              }}
+            >
+              {mensagem}
+            </div>
+          )}
+
         </div>
 
-        <div className="vendas-acoes">
-          <button
-            type="button"
-            className="vendas-limpar"
-            onClick={limparVenda}
-          >
-            Limpar venda
-          </button>
-
-          <button
-            type="button"
-            className="vendas-finalizar"
-            disabled={!clienteId || itens.length === 0}
-            onClick={finalizarVenda}
-          >
-            Finalizar venda
-          </button>
-        </div>
-
-        {mensagem && (
-          <p
-            className={
-              erro
-                ? 'vendas-mensagem vendas-mensagem-erro'
-                : 'vendas-mensagem'
-            }
-            role="status"
-            aria-live="polite"
-          >
-            {mensagem}
-          </p>
-        )}
-      </section>
+      </div>
     </div>
   )
 }
-
-export default Vendas

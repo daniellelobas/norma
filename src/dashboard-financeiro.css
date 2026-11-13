@@ -1,0 +1,108 @@
+
+    
+  
+/* Estilos complementares do gráfico e dos indicadores financeiros.
+   Este arquivo é importado junto com o App.css existente, sem substituí-lo. */
+
+.dashboard-grafico,
+.dashboard-resumo-financeiro {
+  background: #fff;
+  border: 1px solid #eee7f5;
+  border-radius: 20px;
+  padding: 25px;
+  margin-top: 25px;
+  box-shadow: 0 5px 20px rgba(90, 55, 120, 0.05);
+}
+
+.grafico-header h2,
+.dashboard-resumo-financeiro h2 {
+  color: #49345f;
+  font-size: 20px;
+  margin: 0 0 6px;
+}
+
+.grafico-header p {
+  color: #91869e;
+  font-size: 13px;
+  margin: 0;
+}
+
+.grafico-barras {
+  height: 240px;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 15px;
+  margin-top: 25px;
+}
+
+.grafico-coluna {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.grafico-coluna strong {
+  font-size: 11px;
+  color: #79658e;
+  white-space: nowrap;
+}
+
+.grafico-barra-area {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: #f8f5fb;
+  border-radius: 10px 10px 4px 4px;
+  overflow: hidden;
+}
+
+.grafico-barra {
+  width: 55%;
+  min-height: 0;
+  background: linear-gradient(180deg, #bd9add, #8963b3);
+  border-radius: 9px 9px 0 0;
+  transition: height 0.3s ease;
+}
+
+.grafico-coluna span {
+  color: #79658e;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.dashboard-resumo-financeiro p {
+  color: #756783;
+  margin: 12px 0 6px;
+}
+
+.dashboard-resumo-financeiro strong {
+  color: #8963b3;
+}
+
+.dashboard-resumo-financeiro small {
+  color: #978ca2;
+  line-height: 1.6;
+  display: block;
+}
+
+@media (max-width: 600px) {
+  .dashboard-grafico,
+  .dashboard-resumo-financeiro {
+    padding: 16px;
+  }
+
+  .grafico-barras {
+    gap: 6px;
+  }
+
+  .grafico-coluna strong {
+    font-size: 9px;
+  }
+}
+

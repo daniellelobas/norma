@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react'
 
 type Produto = {
@@ -11,481 +10,225 @@ type Produto = {
   precoVenda: number
   quantidade: number
   estoqueMinimo: number
-  validade: string
-  lote: string
-  fornecedor: string
 }
 
-const produtoVazio = {
+const CHAVE_PRODUTOS = 'norma-produtos'
+
+const formularioInicial = {
   codigo: '',
   nome: '',
   marca: '',
-  categoria: '',
+  categoria: 'Maquiagem',
   precoCusto: '',
   precoVenda: '',
   quantidade: '',
-  estoqueMinimo: '',
-  validade: '',
-  lote: '',
-  fornecedor: '',
+  estoqueMinimo: '5',
 }
 
-type FormularioProduto = typeof produtoVazio
-
-function Produtos() {
+export default function Produtos() {
   const [produtos, setProdutos] = useState<Produto[]>(() => {
-    const produtosSalvos = localStorage.getItem('norma-produtos')
-
-    if (produtosSalvos) {
-      try {
-        return JSON.parse(produtosSalvos) as Produto[]
-      } catch {
-        return []
-      }
+    try {
+      const dados = localStorage.getItem(CHAVE_PRODUTOS)
+      return dados ? JSON.parse(dados) : []
+    } catch {
+      return []
     }
-
-    return []
   })
 
-  const [formulario, setFormulario] =
-    useState<FormularioProduto>(produtoVazio)
-
-  const [busca, setBusca] = useState('')
+  const [formulario, setFormulario] = useState(formularioInicial)
   const [produtoEditando, setProdutoEditando] = useState<number | null>(null)
+  const [busca, setBusca] = useState('')
+  const [mensagem, setMensagem] = useState('')
+  const [abaAtiva, setAbaAtiva] = useState<'formulario' | 'listagem'>('formulario')
 
   useEffect(() => {
-    localStorage.setItem('norma-produtos', JSON.stringify(produtos))
+    localStorage.setItem(CHAVE_PRODUTOS, JSON.stringify(produtos))
+    window.dispatchEvent(new Event('norma-dados-atualizados'))
   }, [produtos])
 
-  function handleCampoChange(
-    event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
-  ) {
-    const { name, value } = event.target
-
-    setFormulario((formularioAtual) => ({
-      ...formularioAtual,
-      [name]: value,
-    }))
+  function formatarMoeda(valor: number) {
+    return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
   }
 
-  function limparFormulario() {
-    setFormulario({ ...produtoVazio })
-    setProdutoEditando(null)
-  }
-
-  function handleSalvar(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-
-    const codigo = formulario.codigo.trim()
-    const nome = formulario.nome.trim()
-
-    const codigoDuplicado = produtos.some(
-      (produto) =>
-        produto.codigo.toLowerCase() === codigo.toLowerCase() &&
-        produto.id !== produtoEditando,
-    )
-
-    if (codigoDuplicado) {
-      window.alert('Já existe um produto cadastrado com esse código.')
+  function handleSalvar(e: React.FormEvent) {
+    e.preventDefault()
+    if (!formulario.nome.trim() || !formulario.precoVenda) {
+      setMensagem('Preencha o nome e o preço de venda do produto.')
       return
     }
 
-    const precoCusto = Number(formulario.precoCusto)
-    const precoVenda = Number(formulario.precoVenda)
-    const quantidade = Number(formulario.quantidade)
-    const estoqueMinimo = Number(formulario.estoqueMinimo)
-
-    if (
-      precoCusto < 0 ||
-      precoVenda < 0 ||
-      quantidade < 0 ||
-      estoqueMinimo < 0 ||
-      formulario.precoCusto === '' ||
-      formulario.precoVenda === '' ||
-      formulario.quantidade === '' ||
-      formulario.estoqueMinimo === '' ||
-      !Number.isFinite(precoCusto) ||
-      !Number.isFinite(precoVenda) ||
-      !Number.isFinite(quantidade) ||
-      !Number.isFinite(estoqueMinimo)
-    ) {
-      window.alert('Confira os preços e as quantidades informadas.')
-      return
-    }
-
-    if (
-      !Number.isInteger(quantidade) ||
-      !Number.isInteger(estoqueMinimo)
-    ) {
-      window.alert('As quantidades devem ser números inteiros.')
-      return
-    }
-
-    const dadosProduto = {
-      codigo,
-      nome,
-      marca: formulario.marca.trim(),
-      categoria: formulario.categoria.trim(),
-      precoCusto,
-      precoVenda,
-      quantidade,
-      estoqueMinimo,
-      validade: formulario.validade,
-      lote: formulario.lote.trim(),
-      fornecedor: formulario.fornecedor.trim(),
+    const novoProduto: Produto = {
+      id: produtoEditando ?? Date.now(),
+      codigo: formulario.codigo || String(Date.now()).slice(-4),
+      nome: formulario.nome.trim(),
+      marca: formulario.marca.trim() || 'Norma Cosméticos',
+      categoria: formulario.categoria,
+      precoCusto: Number(formulario.precoCusto) || 0,
+      precoVenda: Number(formulario.precoVenda) || 0,
+      quantidade: Number(formulario.quantidade) || 0,
+      estoqueMinimo: Number(formulario.estoqueMinimo) || 5,
     }
 
     if (produtoEditando !== null) {
-      setProdutos((listaAtual) =>
-        listaAtual.map((produto) =>
-          produto.id === produtoEditando
-            ? { ...produto, ...dadosProduto }
-            : produto,
-        ),
-      )
+      setProdutos(produtos.map(p => p.id === produtoEditando ? novoProduto : p))
+      setMensagem('Produto atualizado com sucesso!')
     } else {
-      const novoProduto: Produto = {
-        id: Date.now(),
-        ...dadosProduto,
-      }
-
-      setProdutos((listaAtual) => [...listaAtual, novoProduto])
+      setProdutos([...produtos, novoProduto])
+      setMensagem('Produto cadastrado com sucesso!')
     }
 
-    limparFormulario()
+    setFormulario(formularioInicial)
+    setProdutoEditando(null)
   }
 
   function handleEditar(produto: Produto) {
     setProdutoEditando(produto.id)
-
     setFormulario({
       codigo: produto.codigo,
       nome: produto.nome,
       marca: produto.marca,
-      categoria: produto.categoria,
+      categoria: produto.categoria || 'Maquiagem',
       precoCusto: String(produto.precoCusto),
       precoVenda: String(produto.precoVenda),
       quantidade: String(produto.quantidade),
       estoqueMinimo: String(produto.estoqueMinimo),
-      validade: produto.validade,
-      lote: produto.lote,
-      fornecedor: produto.fornecedor,
     })
-
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    setAbaAtiva('formulario')
   }
 
   function handleExcluir(id: number) {
-    const confirmou = window.confirm(
-      'Tem certeza de que deseja excluir este produto?',
-    )
-
-    if (!confirmou) {
-      return
-    }
-
-    setProdutos((listaAtual) =>
-      listaAtual.filter((produto) => produto.id !== id),
-    )
-
-    if (produtoEditando === id) {
-      limparFormulario()
-    }
+    if (!window.confirm('Deseja realmente excluir este produto?')) return
+    setProdutos(produtos.filter(p => p.id !== id))
+    setMensagem('Produto excluído com sucesso.')
   }
 
-  const produtosFiltrados = produtos.filter((produto) => {
-    const termo = busca.trim().toLowerCase()
-
-    return (
-      produto.nome.toLowerCase().includes(termo) ||
-      produto.codigo.toLowerCase().includes(termo) ||
-      produto.marca.toLowerCase().includes(termo) ||
-      produto.categoria.toLowerCase().includes(termo) ||
-      produto.fornecedor.toLowerCase().includes(termo)
-    )
-  })
-
-  function formatarMoeda(valor: number) {
-    return valor.toLocaleString('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-    })
-  }
+  const produtosFiltrados = produtos.filter(p =>
+    p.nome.toLowerCase().includes(busca.toLowerCase().trim()) ||
+    p.codigo.toLowerCase().includes(busca.toLowerCase().trim()) ||
+    p.marca.toLowerCase().includes(busca.toLowerCase().trim())
+  )
 
   return (
-    <section className="produtos-page">
-      <div className="produtos-header">
-        <h2>Cadastro de produtos</h2>
-        <p>Cadastre e organize os produtos da Norma Cosméticos.</p>
-      </div>
-
-      <form className="produto-form" onSubmit={handleSalvar}>
-        <h3>
-          {produtoEditando !== null
-            ? 'Editar produto'
-            : 'Cadastrar novo produto'}
-        </h3>
-
-        <div className="campos-produto">
-          <div className="campo-produto">
-            <label htmlFor="codigo">Código do produto *</label>
-            <input
-              id="codigo"
-              name="codigo"
-              value={formulario.codigo}
-              onChange={handleCampoChange}
-              placeholder="Ex.: NOR001"
-              required
-            />
-          </div>
-
-          <div className="campo-produto">
-            <label htmlFor="nome-produto">Nome do produto *</label>
-            <input
-              id="nome-produto"
-              name="nome"
-              value={formulario.nome}
-              onChange={handleCampoChange}
-              placeholder="Ex.: Perfume feminino"
-              required
-            />
-          </div>
-
-          <div className="campo-produto">
-            <label htmlFor="marca">Marca *</label>
-            <input
-              id="marca"
-              name="marca"
-              value={formulario.marca}
-              onChange={handleCampoChange}
-              placeholder="Ex.: Natura"
-              required
-            />
-          </div>
-
-          <div className="campo-produto">
-            <label htmlFor="categoria">Categoria *</label>
-            <input
-              id="categoria"
-              name="categoria"
-              value={formulario.categoria}
-              onChange={handleCampoChange}
-              placeholder="Ex.: Perfumes"
-              required
-            />
-          </div>
-
-          <div className="campo-produto">
-            <label htmlFor="precoCusto">Preço de custo (R$) *</label>
-            <input
-              id="precoCusto"
-              name="precoCusto"
-              type="number"
-              min="0"
-              step="0.01"
-              value={formulario.precoCusto}
-              onChange={handleCampoChange}
-              placeholder="0,00"
-              required
-            />
-          </div>
-
-          <div className="campo-produto">
-            <label htmlFor="precoVenda">Preço de venda (R$) *</label>
-            <input
-              id="precoVenda"
-              name="precoVenda"
-              type="number"
-              min="0"
-              step="0.01"
-              value={formulario.precoVenda}
-              onChange={handleCampoChange}
-              placeholder="0,00"
-              required
-            />
-          </div>
-
-          <div className="campo-produto">
-            <label htmlFor="quantidade">Quantidade em estoque *</label>
-            <input
-              id="quantidade"
-              name="quantidade"
-              type="number"
-              min="0"
-              step="1"
-              value={formulario.quantidade}
-              onChange={handleCampoChange}
-              placeholder="Ex.: 20"
-              required
-            />
-          </div>
-
-          <div className="campo-produto">
-            <label htmlFor="estoqueMinimo">Estoque mínimo *</label>
-            <input
-              id="estoqueMinimo"
-              name="estoqueMinimo"
-              type="number"
-              min="0"
-              step="1"
-              value={formulario.estoqueMinimo}
-              onChange={handleCampoChange}
-              placeholder="Ex.: 5"
-              required
-            />
-          </div>
-
-          <div className="campo-produto">
-            <label htmlFor="validade">Data de validade</label>
-            <input
-              id="validade"
-              name="validade"
-              type="date"
-              value={formulario.validade}
-              onChange={handleCampoChange}
-            />
-          </div>
-
-          <div className="campo-produto">
-            <label htmlFor="lote">Lote</label>
-            <input
-              id="lote"
-              name="lote"
-              value={formulario.lote}
-              onChange={handleCampoChange}
-              placeholder="Ex.: LOTE2026"
-            />
-          </div>
-
-          <div className="campo-produto">
-            <label htmlFor="fornecedor">Fornecedor</label>
-            <input
-              id="fornecedor"
-              name="fornecedor"
-              value={formulario.fornecedor}
-              onChange={handleCampoChange}
-              placeholder="Nome do fornecedor"
-            />
-          </div>
+    <div style={{ padding: '24px', backgroundColor: '#f8fafc', minHeight: '100vh', fontFamily: 'Segoe UI, sans-serif' }}>
+      
+      {/* Cabeçalho */}
+      <div style={{ backgroundColor: '#581c87', borderRadius: '12px', padding: '16px 24px', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+        <div>
+          <h1 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0 }}>Catálogo de Produtos | {produtoEditando !== null ? 'Editar' : 'Novo'}</h1>
+          <span style={{ fontSize: '12px', opacity: 0.8 }}>Gestão de Itens e Cosméticos</span>
         </div>
-
-        <div className="acoes-formulario">
-          <button className="botao-cadastrar" type="submit">
-            {produtoEditando !== null
-              ? 'Salvar alterações'
-              : 'Cadastrar produto'}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            type="button"
+            onClick={() => setAbaAtiva(abaAtiva === 'formulario' ? 'listagem' : 'formulario')}
+            style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', color: 'white', padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+          >
+            {abaAtiva === 'formulario' ? `Listagem (${produtos.length})` : 'Novo Produto'}
           </button>
-
-          {produtoEditando !== null && (
-            <button
-              className="botao-cancelar"
-              type="button"
-              onClick={limparFormulario}
-            >
-              Cancelar
-            </button>
-          )}
         </div>
-      </form>
-
-      <div className="lista-produtos">
-        <h2>Produtos cadastrados ({produtos.length})</h2>
-
-        <div className="produtos-search">
-          <input
-            type="search"
-            placeholder="Buscar por código, nome, marca ou fornecedor..."
-            aria-label="Buscar produtos"
-            value={busca}
-            onChange={(event) => setBusca(event.target.value)}
-          />
-        </div>
-
-        {produtosFiltrados.length === 0 ? (
-          <div className="produtos-empty">
-            <h3>
-              {produtos.length === 0
-                ? 'Nenhum produto cadastrado'
-                : 'Nenhum produto encontrado'}
-            </h3>
-            <p>
-              {produtos.length === 0
-                ? 'Preencha o formulário acima para cadastrar o primeiro produto.'
-                : 'Tente pesquisar por outro código, nome, marca ou fornecedor.'}
-            </p>
-          </div>
-        ) : (
-          <div className="tabela-produtos">
-            <table>
-              <thead>
-                <tr>
-                  <th>Código</th>
-                  <th>Produto</th>
-                  <th>Marca</th>
-                  <th>Categoria</th>
-                  <th>Custo</th>
-                  <th>Venda</th>
-                  <th>Estoque</th>
-                  <th>Validade</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {produtosFiltrados.map((produto) => (
-                  <tr key={produto.id}>
-                    <td>{produto.codigo}</td>
-                    <td>{produto.nome}</td>
-                    <td>{produto.marca}</td>
-                    <td>{produto.categoria}</td>
-                    <td>{formatarMoeda(produto.precoCusto)}</td>
-                    <td>{formatarMoeda(produto.precoVenda)}</td>
-                    <td>
-                      <span
-                        className={
-                          produto.quantidade <= produto.estoqueMinimo
-                            ? 'estoque-baixo'
-                            : ''
-                        }
-                      >
-                        {produto.quantidade}
-                      </span>
-                    </td>
-                    <td>
-                      {produto.validade
-                        ? new Date(
-                            `${produto.validade}T12:00:00`,
-                          ).toLocaleDateString('pt-BR')
-                        : 'Não informada'}
-                    </td>
-                    <td>
-                      <div className="acoes-cliente">
-                        <button
-                          className="botao-editar"
-                          type="button"
-                          onClick={() => handleEditar(produto)}
-                        >
-                          Editar
-                        </button>
-
-                        <button
-                          className="botao-excluir"
-                          type="button"
-                          onClick={() => handleExcluir(produto.id)}
-                        >
-                          Excluir
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
-    </section>
+
+      {abaAtiva === 'listagem' ? (
+        <div style={{ background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>Produtos Cadastrados</h2>
+            <input
+              type="text"
+              placeholder="Buscar produto por nome, código ou marca..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              style={{ width: '320px', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+            />
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #f1f5f9', textAlign: 'left', color: '#475569' }}>
+                <th style={{ padding: '12px' }}>Código</th>
+                <th style={{ padding: '12px' }}>Nome</th>
+                <th style={{ padding: '12px' }}>Categoria</th>
+                <th style={{ padding: '12px' }}>Preço Venda</th>
+                <th style={{ padding: '12px' }}>Estoque</th>
+                <th style={{ padding: '12px', textAlign: 'right' }}>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {produtosFiltrados.map(p => (
+                <tr key={p.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                  <td style={{ padding: '12px', color: '#64748b' }}>{p.codigo}</td>
+                  <td style={{ padding: '12px', fontWeight: 600, color: '#1e293b' }}>{p.nome} <span style={{ fontSize: '11px', color: '#94a3b8' }}>({p.marca})</span></td>
+                  <td style={{ padding: '12px', color: '#64748b' }}>{p.categoria}</td>
+                  <td style={{ padding: '12px', fontWeight: 'bold', color: '#6d28d9' }}>{formatarMoeda(p.precoVenda)}</td>
+                  <td style={{ padding: '12px', color: p.quantidade <= p.estoqueMinimo ? '#ef4444' : '#10b981', fontWeight: 600 }}>{p.quantidade} un.</td>
+                  <td style={{ padding: '12px', textAlign: 'right' }}>
+                    <button onClick={() => handleEditar(p)} style={{ background: '#f3e8ff', color: '#6d28d9', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', marginRight: '6px' }}>Editar</button>
+                    <button onClick={() => handleExcluir(p.id)} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Excluir</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <form onSubmit={handleSalvar} style={{ background: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', maxWidth: '800px', margin: '0 auto' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: 'bold', color: '#1e293b', marginBottom: '20px', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>Informações do Produto</h3>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px', marginBottom: '16px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>Código</label>
+              <input type="text" placeholder="Ex: COD001" value={formulario.codigo} onChange={(e) => setFormulario({ ...formulario, codigo: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>Nome do Produto *</label>
+              <input type="text" placeholder="Ex: Base Líquida Matte" value={formulario.nome} onChange={(e) => setFormulario({ ...formulario, nome: e.target.value })} required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }} />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>Marca</label>
+              <input type="text" placeholder="Ex: Natura, Avon..." value={formulario.marca} onChange={(e) => setFormulario({ ...formulario, marca: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>Categoria</label>
+              <select value={formulario.categoria} onChange={(e) => setFormulario({ ...formulario, categoria: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff' }}>
+                <option value="Maquiagem">Maquiagem</option>
+                <option value="Skincare">Skincare</option>
+                <option value="Perfumes">Perfumes</option>
+                <option value="Corpo e Banho">Corpo e Banho</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>Preço Custo</label>
+              <input type="number" step="0.01" value={formulario.precoCusto} onChange={(e) => setFormulario({ ...formulario, precoCusto: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>Preço Venda *</label>
+              <input type="number" step="0.01" value={formulario.precoVenda} onChange={(e) => setFormulario({ ...formulario, precoVenda: e.target.value })} required style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>Qtd. Inicial</label>
+              <input type="number" value={formulario.quantidade} onChange={(e) => setFormulario({ ...formulario, quantidade: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>Estoque Mínimo</label>
+              <input type="number" value={formulario.estoqueMinimo} onChange={(e) => setFormulario({ ...formulario, estoqueMinimo: e.target.value })} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }} />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button type="submit" style={{ backgroundColor: '#6d28d9', color: 'white', border: 'none', borderRadius: '8px', padding: '12px 24px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' }}>Salvar Produto</button>
+            {produtoEditando !== null && (
+              <button type="button" onClick={() => { setProdutoEditando(null); setFormulario(formularioInicial); }} style={{ backgroundColor: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '8px', padding: '12px 24px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancelar</button>
+            )}
+          </div>
+
+          {mensagem && <div style={{ marginTop: '14px', padding: '10px', borderRadius: '8px', fontSize: '12px', backgroundColor: '#f0fdf4', color: '#16a34a', border: '1px solid #86efac' }}>{mensagem}</div>}
+        </form>
+      )}
+    </div>
   )
 }
-
-export default Produtos
