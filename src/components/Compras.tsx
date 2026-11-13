@@ -10,6 +10,13 @@ type Compra = {
   dataCompra: string
 }
 
+type FornecedorCadastrado = {
+  id: number
+  nome?: string
+  razaoSocial?: string
+  nomeFantasia?: string
+}
+
 export default function Compras() {
   const [compras, setCompras] = useState<Compra[]>(() => {
     try {
@@ -20,6 +27,7 @@ export default function Compras() {
     }
   })
 
+  const [fornecedores, setFornecedores] = useState<FornecedorCadastrado[]>([])
   const [fornecedorNome, setFornecedorNome] = useState('')
   const [descricao, setDescricao] = useState('')
   const [valor, setValor] = useState('')
@@ -28,9 +36,35 @@ export default function Compras() {
   const [mensagem, setMensagem] = useState('')
 
   useEffect(() => {
+    function carregarFornecedores() {
+      try {
+        const dados =
+          localStorage.getItem('norma-fornecedores') ||
+          localStorage.getItem('fornecedores')
+        setFornecedores(dados ? JSON.parse(dados) : [])
+      } catch {
+        setFornecedores([])
+      }
+    }
+
+    carregarFornecedores()
+    window.addEventListener('norma-dados-atualizados', carregarFornecedores)
+    window.addEventListener('storage', carregarFornecedores)
+
+    return () => {
+      window.removeEventListener('norma-dados-atualizados', carregarFornecedores)
+      window.removeEventListener('storage', carregarFornecedores)
+    }
+  }, [])
+
+  useEffect(() => {
     localStorage.setItem('norma-contas-compras', JSON.stringify(compras))
     window.dispatchEvent(new Event('norma-dados-atualizados'))
   }, [compras])
+
+  function obterNomeFornecedor(f: FornecedorCadastrado) {
+    return f.nomeFantasia || f.nome || f.razaoSocial || `Fornecedor #${f.id}`
+  }
 
   function formatarMoeda(v: number) {
     return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -39,7 +73,7 @@ export default function Compras() {
   function handleSalvar(e: React.FormEvent) {
     e.preventDefault()
     if (!fornecedorNome.trim() || !valor) {
-      setMensagem('Preencha o fornecedor e o valor da compra.')
+      setMensagem('Selecione o fornecedor e informe o valor da compra.')
       return
     }
 
@@ -63,13 +97,15 @@ export default function Compras() {
   }
 
   function alternarStatus(id: number) {
-    setCompras(compras.map(c => {
-      if (c.id === id) {
-        const novoStatus = c.status === 'Pendente' ? 'Pago' : 'Pendente'
-        return { ...c, status: novoStatus }
-      }
-      return c
-    }))
+    setCompras(
+      compras.map((c) => {
+        if (c.id === id) {
+          const novoStatus = c.status === 'Pendente' ? 'Pago' : 'Pendente'
+          return { ...c, status: novoStatus }
+        }
+        return c
+      })
+    )
   }
 
   return (
@@ -91,14 +127,31 @@ export default function Compras() {
 
           <div style={{ marginBottom: '12px' }}>
             <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>Fornecedor *</label>
-            <input
-              type="text"
-              placeholder="Nome do fornecedor / distribuidora"
+            <select
               value={fornecedorNome}
               onChange={(e) => setFornecedorNome(e.target.value)}
               required
-              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-            />
+              style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff' }}
+            >
+              <option value="">
+                {fornecedores.length === 0
+                  ? 'Nenhum fornecedor cadastrado'
+                  : 'Selecione um fornecedor...'}
+              </option>
+              {fornecedores.map((f) => {
+                const nomeExibicao = obterNomeFornecedor(f)
+                return (
+                  <option key={f.id} value={nomeExibicao}>
+                    {nomeExibicao}
+                  </option>
+                )
+              })}
+            </select>
+            {fornecedores.length === 0 && (
+              <span style={{ fontSize: '11px', color: '#dc2626', display: 'block', marginTop: '4px' }}>
+                Cadastre um fornecedor na aba Fornecedores antes de lançar a compra.
+              </span>
+            )}
           </div>
 
           <div style={{ marginBottom: '12px' }}>
@@ -186,7 +239,9 @@ export default function Compras() {
                 <div key={c.id} style={{ padding: '12px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <strong style={{ fontSize: '13px', color: '#1e293b', display: 'block' }}>{c.fornecedorNome}</strong>
-                    <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{c.descricao} • Vencimento: {c.vencimento ? c.vencimento.split('-').reverse().join('/') : 'N/I'}</span>
+                    <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>
+                      {c.descricao} • Vencimento: {c.vencimento ? c.vencimento.split('-').reverse().join('/') : 'N/I'}
+                    </span>
                     <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#6d28d9', display: 'block', marginTop: '4px' }}>{formatarMoeda(c.valor)}</span>
                   </div>
                   <div>
